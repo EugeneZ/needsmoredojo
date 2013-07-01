@@ -64,7 +64,7 @@ public class MismatchedImportsDetector
         // simple case can be taken care of by just matching the stuff after / with the parameter
         // also case insensitive because the programmer can use any casing for the parameter
         String defineComparison = define.toLowerCase().replaceAll("'|\"", "").replace("\"", "");
-        String parameterComparison = parameter.toLowerCase();
+        String parameterComparison = parameter.toLowerCase().replace("$", "");
 
         if(defineComparison.contains("/_base/fx"))
         {
