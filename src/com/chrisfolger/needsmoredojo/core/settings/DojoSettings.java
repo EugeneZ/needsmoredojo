@@ -1,44 +1,92 @@
 package com.chrisfolger.needsmoredojo.core.settings;
 
-import com.intellij.ide.util.PropertiesComponent;
+import com.intellij.openapi.components.*;
 import com.intellij.openapi.project.Project;
+import com.intellij.util.xmlb.XmlSerializerUtil;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-public class DojoSettings
-{
-    private static DojoSettings instance;
+import java.util.LinkedHashMap;
 
-    public void setInstance(DojoSettings inst)
-    {
-        instance = inst;
-    }
 
-    public static DojoSettings getInstance()
-    {
-        if(instance == null)
-        {
-            instance = new DojoSettings();
+@State(
+        name = "NeedsMoreDojoConfiguration",
+        storages = {
+                @Storage(id = "default", file = StoragePathMacros.PROJECT_FILE),
+                @Storage(id = "dir", file = StoragePathMacros.PROJECT_CONFIG_DIR + "/needsmoredojoconfig.xml", scheme = StorageScheme.DIRECTORY_BASED)
         }
+)
+public class DojoSettings implements PersistentStateComponent<DojoSettings>
+{
+    private LinkedHashMap<String, String> amdImportNamingExceptions;
+    private String dojoSourcesDirectory;
+    private String projectSourcesDirectory;
+    private boolean preferRelativeImports;
 
-        return instance;
+    public DojoSettings()
+    {
+        amdImportNamingExceptions = new LinkedHashMap<String, String>();
+        amdImportNamingExceptions.put("dojo/sniff", "has");
+        preferRelativeImports = false;
     }
 
-    public String getDojoSourcesDirectory(Project project)
+    public @NotNull LinkedHashMap<String, String> getExceptionsMap()
     {
-        return PropertiesComponent.getInstance(project).getValue("com.chrisfolger.needsmoredojo.core.settings.dojosources", "");
+        return amdImportNamingExceptions;
     }
 
-    public void setDojoSourcesDirectory(Project project, String value)
+    public @Nullable String getException(@NotNull String module)
     {
-        PropertiesComponent.getInstance(project).setValue("com.chrisfolger.needsmoredojo.core.settings.dojosources", value);
+        if(amdImportNamingExceptions.containsKey(module))
+        {
+            return amdImportNamingExceptions.get(module);
+        }
+        else
+        {
+            return null;
+        }
     }
 
-    public String getProjectSourcesDirectory(Project project)
-    {
-        return PropertiesComponent.getInstance(project).getValue("com.chrisfolger.needsmoredojo.core.settings.projectsources", "");
+    public LinkedHashMap<String, String> getAmdImportNamingExceptions() {
+        return amdImportNamingExceptions;
     }
 
-    public void setProjectSourcesDirectory(Project project, String value)
-    {
-        PropertiesComponent.getInstance(project).setValue("com.chrisfolger.needsmoredojo.core.settings.projectsources", value);
+    public void setAmdImportNamingExceptions(LinkedHashMap<String, String> amdImportNamingExceptions) {
+        this.amdImportNamingExceptions = amdImportNamingExceptions;
+    }
+
+    public String getDojoSourcesDirectory() {
+        return dojoSourcesDirectory;
+    }
+
+    public void setDojoSourcesDirectory(String dojoSourcesDirectory) {
+        this.dojoSourcesDirectory = dojoSourcesDirectory;
+    }
+
+    public String getProjectSourcesDirectory() {
+        return projectSourcesDirectory;
+    }
+
+    public void setProjectSourcesDirectory(String projectSourcesDirectory) {
+        this.projectSourcesDirectory = projectSourcesDirectory;
+    }
+
+    public boolean isPreferRelativeImports() {
+        return preferRelativeImports;
+    }
+
+    public void setPreferRelativeImports(boolean preferRelativeImports) {
+        this.preferRelativeImports = preferRelativeImports;
+    }
+
+    @Nullable
+    @Override
+    public DojoSettings getState() {
+        return this;
+    }
+
+    @Override
+    public void loadState(DojoSettings state) {
+        XmlSerializerUtil.copyBean(state, this);
     }
 }

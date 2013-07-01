@@ -1,40 +1,57 @@
 package com.chrisfolger.needsmoredojo.intellij.configurable;
 
+import com.chrisfolger.needsmoredojo.core.amd.SourcesAutoDetector;
 import com.chrisfolger.needsmoredojo.core.settings.DojoSettings;
 import com.chrisfolger.needsmoredojo.core.util.AMDUtil;
 import com.intellij.ide.DataManager;
 import com.intellij.openapi.actionSystem.DataContext;
-import com.intellij.openapi.actionSystem.DataKeys;
+import com.intellij.openapi.actionSystem.PlatformDataKeys;
+import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.fileChooser.FileChooserDescriptor;
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.ComponentWithBrowseButton;
+import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.ui.TextComponentAccessor;
 import com.intellij.openapi.ui.TextFieldWithBrowseButton;
-import com.intellij.psi.PsiDirectory;
+import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
+import javax.swing.event.ChangeEvent;
+import javax.swing.event.ChangeListener;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.event.KeyEvent;
+import java.awt.event.KeyListener;
+import java.util.Collection;
 
 public class DojoSettingsConfigurable implements Configurable {
     private JComponent myComponent;
-    private JButton autoDetect;
+    private JButton autoDetectDojoSources;
     private JPanel myPanel;
     private TextFieldWithBrowseButton projectSourcesText;
     private TextFieldWithBrowseButton dojoSourcesText;
+    private JTable moduleExceptionsTable;
+    private JButton addMapping;
+    private JTextField addModuleText;
+    private JTextField addParameterText;
+    private JButton removeMapping;
+    private JCheckBox preferRelativePathsWhenCheckBox;
+    private JButton autoDetectProjectSources;
     private Project project;
     private String dojoSourceString;
     private String projectSourceString;
+    private DojoSettings settingsService;
+    private boolean modified = false;
 
     public String getDisplayName() {
         return "Needs More Dojo";
     }
 
     public boolean isModified() {
-        return true;
+        return modified;
     }
 
     private class ProjectSourcesChosen extends ComponentWithBrowseButton.BrowseFolderActionListener<JTextField>
@@ -57,9 +74,21 @@ public class DojoSettingsConfigurable implements Configurable {
         @Override
         public void actionPerformed(ActionEvent e)
         {
-            PsiDirectory directory = AMDUtil.getDojoSourcesDirectory(project);
-            dojoSourcesText.setText(directory.getVirtualFile().getCanonicalPath());
-            dojoSourceString = directory.getVirtualFile().getCanonicalPath();
+            autoDetectDojoSources.setEnabled(false);
+            VirtualFile directory = AMDUtil.getDojoSourcesDirectory(project, false);
+
+            if(directory == null)
+            {
+                Messages.showInfoMessage("Could not find any dojo sources via auto-detection", "Auto-detect Dojo Sources");
+                autoDetectDojoSources.setEnabled(true);
+                return;
+            }
+
+            dojoSourcesText.setText(directory.getCanonicalPath());
+            dojoSourceString = directory.getCanonicalPath();
+            autoDetectDojoSources.setEnabled(true);
+
+            updateModifiedState();
         }
     }
 
@@ -78,6 +107,29 @@ public class DojoSettingsConfigurable implements Configurable {
         }
     }
 
+    private class TextChangedListener implements KeyListener
+    {
+        @Override
+        public void keyTyped(KeyEvent e) {
+        }
+
+        @Override
+        public void keyPressed(KeyEvent e) {}
+
+        @Override
+        public void keyReleased(KeyEvent e) {
+            updateModifiedState();
+        }
+    }
+
+    private void updateModifiedState()
+    {
+        modified = !dojoSourcesText.getText().equals(settingsService.getDojoSourcesDirectory()) ||
+                !projectSourcesText.getText().equals(settingsService.getProjectSourcesDirectory()) ||
+                preferRelativePathsWhenCheckBox.isSelected() != settingsService.isPreferRelativeImports();
+
+    }
+
     public JComponent createComponent() {
         myComponent = (JComponent) myPanel;
         FileChooserDescriptor descriptor = FileChooserDescriptorFactory.createSingleFolderDescriptor();
@@ -85,18 +137,58 @@ public class DojoSettingsConfigurable implements Configurable {
         projectSourcesText.addBrowseFolderListener(null, new ProjectSourcesChosen("Project Sources", "Select the root of your project's sources to support certain features of Needs More Dojo", descriptor));
         dojoSourcesText.addBrowseFolderListener(null, new DojoSourcesChosen("Dojo Sources", "Select the root of the dojo library sources to support certain features of Needs More Dojo", descriptor));
 
-        autoDetect.addActionListener(new AutoDetectDojoSources());
+        autoDetectDojoSources.addActionListener(new AutoDetectDojoSources());
 
         // don't know how else to get the current project???
         DataContext context = DataManager.getInstance().getDataContext();
-        Project project = DataKeys.PROJECT.getData(context);
+        final Project project = PlatformDataKeys.PROJECT.getData(context);
         this.project = project;
 
-        dojoSourceString = DojoSettings.getInstance().getDojoSourcesDirectory(project);
+        settingsService = ServiceManager.getService(project, DojoSettings.class);
+
+        dojoSourceString = settingsService.getDojoSourcesDirectory();
         dojoSourcesText.setText(dojoSourceString);
 
-        projectSourceString = DojoSettings.getInstance().getProjectSourcesDirectory(project);
+        projectSourceString =settingsService.getProjectSourcesDirectory();
         projectSourcesText.setText(projectSourceString);
+
+        final ExceptionsTableBuilder builder = new ExceptionsTableBuilder(moduleExceptionsTable, project);
+
+        addMapping.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                builder.getTableModel().addRow(new String[] { addModuleText.getText(), addParameterText.getText()});
+            }
+        });
+
+        removeMapping.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                builder.getTableModel().removeRow(moduleExceptionsTable.getSelectedRow());
+            }
+        });
+
+        autoDetectProjectSources.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                autoDetectProjectSources.setEnabled(false);
+                addAutoDetectedSource(new SourcesAutoDetector().getPossibleSourceRoots(project));
+                autoDetectProjectSources.setEnabled(true);
+                updateModifiedState();
+            }
+        });
+
+        preferRelativePathsWhenCheckBox.setSelected(settingsService.isPreferRelativeImports());
+
+        dojoSourcesText.getTextField().addKeyListener(new TextChangedListener());
+        projectSourcesText.getTextField().addKeyListener(new TextChangedListener());
+
+        preferRelativePathsWhenCheckBox.addChangeListener(new ChangeListener() {
+            @Override
+            public void stateChanged(ChangeEvent e) {
+                updateModifiedState();
+            }
+        });
 
         return myComponent;
     }
@@ -106,17 +198,49 @@ public class DojoSettingsConfigurable implements Configurable {
         return null;
     }
 
-    public void apply()
+    private void addAutoDetectedSource(Collection<String> possibleSourceRoots)
     {
-        if(dojoSourceString != null)
+        String[] choices = possibleSourceRoots.toArray(new String[0]);
+
+        if(choices.length == 0)
         {
-            DojoSettings.getInstance().setDojoSourcesDirectory(project, dojoSourceString);
+            Messages.showInfoMessage("Could not find any source roots via auto-detection", "Auto-detect Project Sources");
+            return;
         }
 
-        if(projectSourceString != null)
+        String result = choices[0];
+        if(choices.length > 1)
         {
-            DojoSettings.getInstance().setProjectSourcesDirectory(project, projectSourceString);
+            result = Messages.showEditableChooseDialog("Found these possible source roots: ", "Auto-detect Project Sources", null, choices, choices[0], null);
+            if(result == null || result.equals(""))
+            {
+                return;
+            }
+
+            if(result.contains("(") && result.contains(")"))
+            {
+                result = result.substring(result.indexOf('(') + 1, result.indexOf(')'));
+            }
         }
+
+        projectSourceString = result;
+        projectSourcesText.setText(result);
+    }
+
+    public void apply()
+    {
+        if(dojoSourcesText.getText() != null)
+        {
+           settingsService.setDojoSourcesDirectory(dojoSourcesText.getText());
+        }
+
+        if(projectSourcesText.getText() != null)
+        {
+           settingsService.setProjectSourcesDirectory(projectSourcesText.getText());
+        }
+
+        settingsService.setPreferRelativeImports(preferRelativePathsWhenCheckBox.isSelected());
+        modified = false;
     }
 
     public void disposeUIResources() {
@@ -129,10 +253,14 @@ public class DojoSettingsConfigurable implements Configurable {
 
     public void reset()
     {
-        dojoSourceString = DojoSettings.getInstance().getDojoSourcesDirectory(project);
+        dojoSourceString = settingsService.getDojoSourcesDirectory();
         dojoSourcesText.setText(dojoSourceString);
 
-        projectSourceString = DojoSettings.getInstance().getProjectSourcesDirectory(project);
+        projectSourceString =settingsService.getProjectSourcesDirectory();
         projectSourcesText.setText(projectSourceString);
+
+        preferRelativePathsWhenCheckBox.setSelected(settingsService.isPreferRelativeImports());
+
+        modified = false;
     }
 }
