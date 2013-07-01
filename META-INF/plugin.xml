@@ -1,10 +1,12 @@
 <idea-plugin version="2">
   <id>com.chrisfolger.needsmoredojo</id>
-  <name>Needs More Dojo</name>
+  <name>Needs More Dojo Custom</name>
   <version>0.3.1</version>
-  <vendor email="cefolger@gmail.com" url="http://www.chrisfolger.com">Chris Folger</vendor>
+  <vendor email="eugene.zar@gmail.com" url="http://www.eugenez.net">Eugene Zaretskiy</vendor>
 
   <description><![CDATA[
+        <b>This is a custom build of Chris Folger's needsmoredojo plugin, customized to suit my particular needs and
+            coding patterns.</b><br/>
         Tools for working with the dojo toolkit
             <ul>
                 <li>detect and flag mismatched AMD imports as errors</li>
